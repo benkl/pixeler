@@ -6,12 +6,12 @@ bl_info = { \
     'author': '_benkl',
     'version': (0, 0, 1),
     'blender': (2, 7, 9),
-    'location': 'View3D',
+    'location': 'View3D > Tools > Pixeler - Pixels to Planes',
     'description': 'Converts the pixels of an image to an array of planes with corresponding colours.',
-    'tracker_url': '',
-    'wiki_url': '',
+    'tracker_url': 'https://github.com/benkl/pixeler',
+    'wiki_url': 'https://github.com/benkl/pixeler/wiki',
     'support': 'COMMUNITY',
-    'category': 'Tools'}
+    'category': 'Object'}
 
 bpy.types.Scene.pixeler_xoffset = bpy.props.FloatProperty(name="X offset", default=2)
 bpy.types.Scene.pixeler_yoffset = bpy.props.FloatProperty(name="Y offset", default=2)
@@ -19,7 +19,7 @@ bpy.types.Scene.pixeler_image_name = bpy.props.StringProperty(name="Image Name")
 
 class Pixeler_Run(bpy.types.Operator):
     bl_idname = 'object.pixeler_run'
-    bl_label = "Pixeler V1"
+    bl_label = "Pixeler"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -29,10 +29,10 @@ class Pixeler_Run(bpy.types.Operator):
     def execute(self, context):
 
         # Set File Name
-        test_file = bpy.context.scene.pixeler_image_name
+        pixeler_file = bpy.context.scene.pixeler_image_name
 
         # Set img
-        img = bpy.data.images[test_file]
+        img = bpy.data.images[pixeler_file]
 
         # Get and set image width and height
         w = img.size[0]
