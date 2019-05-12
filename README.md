@@ -1,4 +1,5 @@
-# UPDATE to Blender 2.80 API.
+# UPDATE
+Now working in Blender 2.80
 
 # Pixeler
 Pixels to planes Blender Plugin. Install or copy into the addons folder.
