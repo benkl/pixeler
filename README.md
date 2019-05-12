@@ -1,5 +1,5 @@
 # UPDATE
-Now working in Blender 2.80
+Now working in Blender 2.80. The 2.79 Version can be found in the 'Blender_2.79' branch.
 
 # Pixeler
 Pixels to planes Blender Plugin. Install or copy into the addons folder.
