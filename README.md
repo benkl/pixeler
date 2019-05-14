@@ -3,7 +3,7 @@
 Pixels to planes Blender Plugin. Install or copy into the addons folder.
 
 # Usage
-Add an image data block to your .blendspecify the name (e.g. image.png) in the Image dropdown. The default x and y offset (2) will create a continuous plane of plane meshes with respective PBR materials of the pixels colour.
+Open/Add an image data block to your .blend and select the name (e.g. image.png) in the Image dropdown. Running the operator will then create a continuous plane with respective PBR materials for each face according to the source image pixel colour.
 
 # History
 2_1
