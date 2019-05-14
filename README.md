@@ -21,9 +21,9 @@ Port to Blender 2.8 without added functionality. The 2.79 Version can be found i
 
 0_1
 Blender 2.79 version 
-  - simple ui implementation
-  - image name input field
-  - modify x and y offset
+  - Simple ui implementation
+  - Image name input field
+  - Modify x and y offset
 
 # Further information
 can be found in the system console while running the function. Reasonable file sizes and restricted colour palettes are recommended. 1000*1000 pixels is the tested working limit. Alpha channel transparency is supported.
