@@ -7,7 +7,7 @@ from bpy.types import Operator, Panel, PropertyGroup
 bl_info = {
     "name": "Pixeler - Pixels to Geometry",
     "author": "_benkl",
-    "version": (0, 3, 0),
+    "version": (0, 4, 0),
     "blender": (5, 0, 0),
     "location": "View3D > Sidebar > Pixeler",
     "description": "Turn an image into live, editable pixel geometry",
@@ -62,6 +62,10 @@ def create_group(material):
     socket(group, 'Geometry', 'INPUT', 'NodeSocketGeometry')
     socket(group, 'Geometry', 'OUTPUT', 'NodeSocketGeometry')
     socket(group, 'Image', 'INPUT', 'NodeSocketImage')
+    socket(group, 'Tile Width', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Tile Height', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Tile Column', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Tile Row', 'INPUT', 'NodeSocketInt', 0, 0)
     socket(group, 'Pixel Size', 'INPUT', 'NodeSocketFloat', 1.0, 0.001)
     socket(group, 'Gap X', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
     socket(group, 'Gap Y', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
@@ -85,15 +89,37 @@ def create_group(material):
 
     pitch_x = math('ADD', inputs.outputs['Pixel Size'], inputs.outputs['Gap X'], 'X pitch')
     pitch_y = math('ADD', inputs.outputs['Pixel Size'], inputs.outputs['Gap Y'], 'Y pitch')
-    width_minus_one = math('SUBTRACT', info.outputs['Width'], label='Width - 1')
-    height_minus_one = math('SUBTRACT', info.outputs['Height'], label='Height - 1')
+    # A zero tile dimension means the full image on that axis. Nonzero tile
+    # dimensions are clipped to the source; column and row count from top-left.
+    tile_width = math('MAXIMUM', inputs.outputs['Tile Width'])
+    tile_height = math('MAXIMUM', inputs.outputs['Tile Height'])
+    group.nodes[tile_width.node.name].inputs[1].default_value = 1
+    group.nodes[tile_height.node.name].inputs[1].default_value = 1
+    width = math('MINIMUM', info.outputs['Width'], tile_width, 'Selected width')
+    height = math('MINIMUM', info.outputs['Height'], tile_height, 'Selected height')
+    use_width = math('GREATER_THAN', inputs.outputs['Tile Width'])
+    use_height = math('GREATER_THAN', inputs.outputs['Tile Height'])
+    width_switch = new_node(group, 'GeometryNodeSwitch', 'Tile or full width')
+    height_switch = new_node(group, 'GeometryNodeSwitch', 'Tile or full height')
+    width_switch.input_type = 'INT'
+    height_switch.input_type = 'INT'
+    links.new(use_width, width_switch.inputs['Switch'])
+    links.new(use_height, height_switch.inputs['Switch'])
+    links.new(info.outputs['Width'], width_switch.inputs['False'])
+    links.new(info.outputs['Height'], height_switch.inputs['False'])
+    links.new(width, width_switch.inputs['True'])
+    links.new(height, height_switch.inputs['True'])
+    selected_width = width_switch.outputs[0]
+    selected_height = height_switch.outputs[0]
+    width_minus_one = math('SUBTRACT', selected_width, label='Width - 1')
+    height_minus_one = math('SUBTRACT', selected_height, label='Height - 1')
     group.nodes[width_minus_one.node.name].inputs[1].default_value = 1
     group.nodes[height_minus_one.node.name].inputs[1].default_value = 1
     points = new_node(group, 'GeometryNodePoints', 'One point per pixel')
-    links.new(math('MULTIPLY', info.outputs['Width'], info.outputs['Height']), points.inputs['Count'])
+    links.new(math('MULTIPLY', selected_width, selected_height), points.inputs['Count'])
     index = new_node(group, 'GeometryNodeInputIndex', 'Pixel index')
-    column = math('FLOOR', math('DIVIDE', index.outputs['Index'], info.outputs['Height']))
-    row = math('MODULO', index.outputs['Index'], info.outputs['Height'])
+    column = math('FLOOR', math('DIVIDE', index.outputs['Index'], selected_height))
+    row = math('MODULO', index.outputs['Index'], selected_height)
     half = new_node(group, 'ShaderNodeValue', 'Half')
     half.outputs[0].default_value = 0.5
     center_x = math('MULTIPLY', width_minus_one, pitch_x)
@@ -105,10 +131,23 @@ def create_group(material):
     links.new(math('SUBTRACT', math('MULTIPLY', row, pitch_y), center_y), position.inputs['Y'])
     links.new(position.outputs['Vector'], points.inputs['Position'])
 
-    # Sample the center of each pixel, independent of geometry spacing.
-    u = math('ADD', column, label='Pixel U center')
+    # Tilesheets are regular grids counted from the upper-left. Only complete
+    # tiles are selectable; out-of-range selections clamp to the last tile.
+    # Geometry rows grow upward, matching Blender image coordinates.
+    last_column = math('SUBTRACT', math('FLOOR', math('DIVIDE', info.outputs['Width'], selected_width)), label='Last tile column')
+    last_row = math('SUBTRACT', math('FLOOR', math('DIVIDE', info.outputs['Height'], selected_height)), label='Last tile row')
+    group.nodes[last_column.node.name].inputs[1].default_value = 1
+    group.nodes[last_row.node.name].inputs[1].default_value = 1
+    tile_column = math('MINIMUM', inputs.outputs['Tile Column'], last_column, 'Tile column')
+    tile_row = math('MINIMUM', inputs.outputs['Tile Row'], last_row, 'Tile row')
+    x_sample = math('ADD', column, math('MULTIPLY', tile_column, selected_width), 'Source X')
+    next_row = math('ADD', tile_row, label='Next tile row')
+    group.nodes[next_row.node.name].inputs[1].default_value = 1
+    tile_bottom = math('SUBTRACT', info.outputs['Height'], math('MULTIPLY', next_row, selected_height), 'Tile bottom')
+    y_sample = math('ADD', row, tile_bottom, 'Source Y')
+    u = math('ADD', x_sample, label='Pixel U center')
     group.nodes[u.node.name].inputs[1].default_value = 0.5
-    v = math('ADD', row, label='Pixel V center')
+    v = math('ADD', y_sample, label='Pixel V center')
     group.nodes[v.node.name].inputs[1].default_value = 0.5
     uv = new_node(group, 'ShaderNodeCombineXYZ', 'Normalized pixel center')
     links.new(math('DIVIDE', u, info.outputs['Width']), uv.inputs['X'])
@@ -252,7 +291,8 @@ class PIXELER_PT_main(Panel):
                              and mod.node_group.name == GROUP_NAME), None)
             if modifier:
                 layout.separator()
-                for name in ('Image', 'Pixel Size', 'Gap X', 'Gap Y', 'Height',
+                for name in ('Image', 'Tile Width', 'Tile Height', 'Tile Column', 'Tile Row',
+                             'Pixel Size', 'Gap X', 'Gap Y', 'Height',
                              'Skip Transparent', 'Palette Steps'):
                     layout.prop(input_socket(modifier, modifier.node_group, name), 'value', text=name)
 

@@ -8,6 +8,8 @@ Pixeler turns an image into live pixel geometry in Blender 5.0+. Download `pixel
 2. Click **Create Pixel Geometry**. Pixeler makes one object in the `Pixeler` collection with a Geometry Nodes modifier; no per-pixel objects or materials are created.
 3. Select that object to edit its live controls in the Pixeler sidebar or Geometry Nodes modifier:
    - **Image**: switch the source image; edits to image pixels update the object.
+   - **Tile Width / Tile Height**: size in pixels of one sprite on a regular tilesheet. `0` uses the full image on that axis.
+   - **Tile Column / Tile Row**: sprite to show, counted from `0` at the sheet's upper-left corner. Selections past the last complete tile clamp to it.
    - **Pixel Size**: width and depth of each plane or cube, in Blender units.
    - **Gap X / Gap Y**: additional spacing between pixels.
    - **Height**: `0` for planes; positive values make cubes resting on the XY plane.
