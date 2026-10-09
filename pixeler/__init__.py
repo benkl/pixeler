@@ -58,7 +58,11 @@ def create_group(material):
     socket(group, 'Image', 'INPUT', 'NodeSocketImage',
            description='Image or tilesheet to turn into geometry')
 
-    sheet = group.interface.new_panel('Tilesheet', description='Pick one sprite from a regular grid of tiles')
+    sheet = group.interface.new_panel('Tilesheet', default_closed=True,
+                                      description='Pick one sprite from a regular grid of tiles')
+    sheet_toggle = socket(group, 'Tilesheet', 'INPUT', 'NodeSocketBool', False, parent=sheet,
+                          description='Use one sprite of a tilesheet instead of the whole image')
+    sheet_toggle.is_panel_toggle = True  # Blender names a panel toggle after its panel
     socket(group, 'Tile Width', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
            description='Width of one sprite in pixels. 0 uses everything inside the margin')
     socket(group, 'Tile Height', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
@@ -133,10 +137,14 @@ def create_group(material):
     pitch_y = math('ADD', inputs.outputs['Pixel Size'], inputs.outputs['Gap Y'], 'Y pitch')
     # Margin is an equal border on all four sides. A zero tile dimension means
     # the whole area inside the margin on that axis; larger tiles are clipped to it.
-    margin = inputs.outputs['Margin']
-    spacing = inputs.outputs['Spacing']
-    tile_width = math('MAXIMUM', inputs.outputs['Tile Width'])
-    tile_height = math('MAXIMUM', inputs.outputs['Tile Height'])
+    # With Tilesheet off, tile size, margin and spacing count as 0: the whole image is used.
+    sheet_on = inputs.outputs[sheet_toggle.identifier]
+    margin = math('MULTIPLY', inputs.outputs['Margin'], sheet_on, 'Margin if tilesheet')
+    spacing = math('MULTIPLY', inputs.outputs['Spacing'], sheet_on, 'Spacing if tilesheet')
+    sheet_width = math('MULTIPLY', inputs.outputs['Tile Width'], sheet_on, 'Tile width if tilesheet')
+    sheet_height = math('MULTIPLY', inputs.outputs['Tile Height'], sheet_on, 'Tile height if tilesheet')
+    tile_width = math('MAXIMUM', sheet_width)
+    tile_height = math('MAXIMUM', sheet_height)
     group.nodes[tile_width.node.name].inputs[1].default_value = 1
     group.nodes[tile_height.node.name].inputs[1].default_value = 1
     border = math_c('MULTIPLY', margin, 2, 'Both margins')
@@ -144,8 +152,8 @@ def create_group(material):
     usable_height = math_c('MAXIMUM', math('SUBTRACT', info.outputs['Height'], border), 1, 'Usable height')
     width = math('MINIMUM', usable_width, tile_width, 'Selected width')
     height = math('MINIMUM', usable_height, tile_height, 'Selected height')
-    use_width = math('GREATER_THAN', inputs.outputs['Tile Width'])
-    use_height = math('GREATER_THAN', inputs.outputs['Tile Height'])
+    use_width = math('GREATER_THAN', sheet_width)
+    use_height = math('GREATER_THAN', sheet_height)
     width_switch = new_node(group, 'GeometryNodeSwitch', 'Tile or full width')
     height_switch = new_node(group, 'GeometryNodeSwitch', 'Tile or full height')
     width_switch.input_type = 'INT'
@@ -303,8 +311,9 @@ def input_socket(modifier, group, name):
 
 
 def is_current_group(group):
-    # Groups from Pixeler 0.4 and older have no interface panels; the Animation panel toggle marks the current layout.
-    return any(item.item_type == 'SOCKET' and item.is_panel_toggle for item in group.interface.items_tree)
+    # Older groups lack the Tilesheet panel toggle; it marks the current layout.
+    return any(item.item_type == 'SOCKET' and item.is_panel_toggle and item.name == 'Tilesheet'
+               for item in group.interface.items_tree)
 
 
 class PIXELER_OT_create(Operator):
@@ -392,13 +401,20 @@ class PixelerSubPanel:
 
 class PIXELER_PT_tilesheet(PixelerSubPanel, Panel):
     bl_label = 'Tilesheet'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw_header(self, context):
+        modifier = pixeler_modifier(context)
+        self.layout.prop(input_socket(modifier, modifier.node_group, 'Tilesheet'), 'value', text='')
 
     def draw(self, context):
         modifier = pixeler_modifier(context)
-        draw_inputs(self.layout, modifier, ('Tile Width', 'Tile Height', 'Margin', 'Spacing'))
-        self.layout.separator()
-        picker = self.layout.column()
-        picker.active = not input_socket(modifier, modifier.node_group, 'Animation').value
+        body = self.layout.column()
+        body.active = input_socket(modifier, modifier.node_group, 'Tilesheet').value
+        draw_inputs(body, modifier, ('Tile Width', 'Tile Height', 'Margin', 'Spacing'))
+        body.separator()
+        picker = body.column()
+        picker.active = body.active and not input_socket(modifier, modifier.node_group, 'Animation').value
         draw_inputs(picker, modifier, ('Tile Column', 'Tile Row'))
 
 
@@ -413,7 +429,8 @@ class PIXELER_PT_animation(PixelerSubPanel, Panel):
     def draw(self, context):
         modifier = pixeler_modifier(context)
         body = self.layout.column()
-        body.active = input_socket(modifier, modifier.node_group, 'Animation').value
+        body.active = (input_socket(modifier, modifier.node_group, 'Animation').value
+                       and input_socket(modifier, modifier.node_group, 'Tilesheet').value)
         draw_inputs(body, modifier, ('Frames Per Tile', 'Start Frame', 'First Tile', 'Tile Count'))
 
 
