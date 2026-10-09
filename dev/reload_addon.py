@@ -1,4 +1,4 @@
-"""Hot-reload pixeler.py from the repo into the running Blender.
+"""Hot-reload pixeler/__init__.py from the repo into the running Blender.
 
 Run through the Blender MCP (execute_blender_code) or from Blender's Text Editor.
 Unregisters the previous copy (if any), re-executes the source file, registers it.
@@ -8,7 +8,7 @@ import importlib.util
 import bpy
 
 REPO = r"C:/Users/benny/Documents/pixeler"
-SRC = REPO + "/pixeler.py"
+SRC = REPO + "/pixeler/__init__.py"
 MOD = "pixeler_dev"
 
 old = sys.modules.pop(MOD, None)

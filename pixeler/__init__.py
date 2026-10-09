@@ -1,18 +1,11 @@
+# Pixeler - turn an image into live pixel geometry in Blender.
+# Copyright (C) 2018-2026 Benjamin Kleinert
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Pixeler: a live image-to-geometry modifier for Blender 5+."""
 
 import bpy
 from bpy.props import PointerProperty
 from bpy.types import Operator, Panel, PropertyGroup
-
-bl_info = {
-    "name": "Pixeler - Pixels to Geometry",
-    "author": "_benkl",
-    "version": (0, 4, 0),
-    "blender": (5, 0, 0),
-    "location": "View3D > Sidebar > Pixeler",
-    "description": "Turn an image into live, editable pixel geometry",
-    "category": "Object",
-}
 
 GROUP_NAME = "Pixeler Geometry"
 MATERIAL_NAME = "Pixeler Surface"

@@ -1,6 +1,12 @@
 # Pixeler
 
-Pixeler turns an image into live pixel geometry in Blender 5.0+. Download `pixeler.py` from the [latest release](https://github.com/benkl/pixeler/releases/latest), then install it in Blender with **Edit → Preferences → Add-ons → Install from Disk** and enable the add-on.
+Pixeler turns an image or a tilesheet sprite into live pixel geometry in Blender 5.0+. It is licensed GPL-3.0-or-later.
+
+![Pixeler sidebar panel](docs/panel.png)
+
+## Install
+
+Download `pixeler-0.4.0.zip` from the [latest release](https://github.com/benkl/pixeler/releases/latest). In Blender, open **Edit → Preferences → Get Extensions**, choose **Install from Disk** from the dropdown at the top right, select the zip, and enable the add-on.
 
 ## Use
 
@@ -27,4 +33,6 @@ Large images produce many faces: roughly one face per visible pixel in plane mod
 
 ## Development
 
-The `pre-ai` branch preserves the original Blender 2.8 implementation. This release uses Blender 5's typed Geometry Nodes modifier inputs. For local development, `dev/reload_addon.py` reloads the source in Blender through the Blender MCP `execute_blender_code` tool; its hard-coded path points to this checkout and must be changed on another machine. See `AGENTS.md` for the local test loop.
+The add-on is the extension package in `pixeler/`: `__init__.py` plus `blender_manifest.toml`. Build the zip with `blender --command extension build --source-dir pixeler --output-dir dist`; `dist/` is git-ignored. Blender's extensions registry accepts add-ons only under GPL-3.0-or-later, which is why the project uses it from 0.4.0. Versions up to 0.3.0 and the `pre-ai` branch stay MIT.
+
+The `pre-ai` branch preserves the original Blender 2.8 implementation. This release uses Blender 5's typed Geometry Nodes modifier inputs. For local development, `dev/reload_addon.py` reloads `pixeler/__init__.py` in Blender through the Blender MCP `execute_blender_code` tool; its hard-coded path points to this checkout and must be changed on another machine. See `AGENTS.md` for the local test loop.
