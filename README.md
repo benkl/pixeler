@@ -1,32 +1,23 @@
-
 # Pixeler
-Pixels to planes Blender Plugin. Install or copy into the addons folder.
 
-# Usage
-Open/Add an image data block to your .blend and select the name (e.g. image.png) in the Image dropdown. Running the operator will then create a continuous plane with respective PBR materials for each face according to the source image pixel colour.
+Pixeler turns an image into live pixel geometry in Blender 5.0+. Download `pixeler.py` from the [latest release](https://github.com/benkl/pixeler/releases/latest), then install it in Blender with **Edit → Preferences → Add-ons → Install from Disk** and enable the add-on.
 
-# History
-2_1
-New functionality.
-  - Images can now be selected in a dropdown
-  - Images can now be added from the addon UI
-  - Extrude toggle
-  - Merge/Remove Doubles toggle
-  - Simplify colours toggle
-  - Skip alpha = 0 pixels toggle
-  - Node Group for centralized materials control (only supports metalness and roughness for now)
+## Use
 
-1_1
-Port to Blender 2.8 without added functionality. The 2.79 Version can be found in the 'Blender_2.79' branch.
+1. Open an image in Blender. In the 3D View sidebar (**N**), open **Pixeler** and choose the image. The folder button can open another image.
+2. Click **Create Pixel Geometry**. Pixeler makes one object in the `Pixeler` collection with a Geometry Nodes modifier; no per-pixel objects or materials are created.
+3. Select that object to edit its live controls in the Pixeler sidebar or Geometry Nodes modifier:
+   - **Image**: switch the source image; edits to image pixels update the object.
+   - **Pixel Size**: width and depth of each plane or cube, in Blender units.
+   - **Gap X / Gap Y**: additional spacing between pixels.
+   - **Height**: `0` for planes; positive values make cubes resting on the XY plane.
+   - **Skip Transparent**: remove pixels with zero alpha. Turn it off to keep their geometry; partially transparent pixels retain their alpha.
+   - **Palette Steps**: `0` keeps original colors; positive values quantize straight RGB to that many steps between 0 and 1.
 
-0_1
-Blender 2.79 version 
-  - Simple ui implementation
-  - Image name input field
-  - Modify x and y offset
+Pixels are centered around the object's origin; the bottom row of the image maps to negative Y. Pixeler stores `pixeler_color` and `pixeler_alpha` as geometry attributes and reads them in one shared `Pixeler Surface` material. Adjust that material's Principled BSDF for metalness, roughness, etc. Editing the shared node group or material affects all Pixeler objects in the file. To edit geometry directly, apply the modifier first. This is a clean cutover: existing objects made by the Blender 2.8 add-on are not converted automatically.
 
-# Further information
-can be found in the system console while running the function. Reasonable file sizes and restricted colour palettes are recommended. 1000*1000 pixels is the tested working limit. Alpha channel transparency is supported.
+Large images produce many faces: roughly one face per visible pixel in plane mode or six in cube mode. Start with small images, especially when extruding. Saved `.blend` files keep the source image data block; pack external images if the file must be portable.
 
-https://blender.stackexchange.com/questions/88196/map-pixels-to-a-grid-of-faces/99090#99090
+## Development
 
+The `pre-ai` branch preserves the original Blender 2.8 implementation. This release uses Blender 5's typed Geometry Nodes modifier inputs. For local development, `dev/reload_addon.py` reloads the source in Blender through the Blender MCP `execute_blender_code` tool; its hard-coded path points to this checkout and must be changed on another machine. See `AGENTS.md` for the local test loop.
