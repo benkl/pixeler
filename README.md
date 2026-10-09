@@ -8,8 +8,13 @@ Pixeler turns an image into live pixel geometry in Blender 5.0+. Download `pixel
 2. Click **Create Pixel Geometry**. Pixeler makes one object in the `Pixeler` collection with a Geometry Nodes modifier; no per-pixel objects or materials are created.
 3. Select that object to edit its live controls in the Pixeler sidebar or Geometry Nodes modifier:
    - **Image**: switch the source image; edits to image pixels update the object.
-   - **Tile Width / Tile Height**: size in pixels of one sprite on a regular tilesheet. `0` uses the full image on that axis.
-   - **Tile Column / Tile Row**: sprite to show, counted from `0` at the sheet's upper-left corner. Selections past the last complete tile clamp to it.
+   - **Tile Width / Tile Height**: size in pixels of one sprite on a regular tilesheet. `0` uses everything inside the margin on that axis.
+   - **Margin / Spacing**: pixels of border around the whole sheet (all four sides) and pixels between neighboring tiles. Tiles are counted from the upper-left corner inside the margin; a partial tile at the far edge is ignored.
+   - **Tile Column / Tile Row**: sprite to show, counted from `0`. Selections past the last tile clamp to it.
+   - **Animate**: ignore Tile Column/Row and flip through tiles in reading order (left to right, then down), using the scene's current frame.
+     - **Frames Per Tile**: how many frames each tile is held.
+     - **Start Frame**: frame at which the first tile appears. Earlier frames wrap backwards, so the loop is continuous.
+     - **First Tile / Tile Count**: index of the first tile in the loop (`0` is the upper-left) and how many tiles to loop through; `0` means through the last tile.
    - **Pixel Size**: width and depth of each plane or cube, in Blender units.
    - **Gap X / Gap Y**: additional spacing between pixels.
    - **Height**: `0` for planes; positive values make cubes resting on the XY plane.

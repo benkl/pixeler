@@ -66,6 +66,13 @@ def create_group(material):
     socket(group, 'Tile Height', 'INPUT', 'NodeSocketInt', 0, 0)
     socket(group, 'Tile Column', 'INPUT', 'NodeSocketInt', 0, 0)
     socket(group, 'Tile Row', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Margin', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Spacing', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Animate', 'INPUT', 'NodeSocketBool', False)
+    socket(group, 'Frames Per Tile', 'INPUT', 'NodeSocketInt', 4, 1)
+    socket(group, 'Start Frame', 'INPUT', 'NodeSocketInt', 0)
+    socket(group, 'First Tile', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Tile Count', 'INPUT', 'NodeSocketInt', 0, 0)
     socket(group, 'Pixel Size', 'INPUT', 'NodeSocketFloat', 1.0, 0.001)
     socket(group, 'Gap X', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
     socket(group, 'Gap Y', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
@@ -87,16 +94,34 @@ def create_group(material):
             links.new(b, node.inputs[1])
         return node.outputs[0]
 
+    def math_c(operation, a, value, label=None):
+        out = math(operation, a, None, label)
+        out.node.inputs[1].default_value = value
+        return out
+
+    def switch(kind, label, condition, false, true):
+        node = new_node(group, 'GeometryNodeSwitch', label)
+        node.input_type = kind
+        links.new(condition, node.inputs['Switch'])
+        links.new(false, node.inputs['False'])
+        links.new(true, node.inputs['True'])
+        return node.outputs[0]
+
     pitch_x = math('ADD', inputs.outputs['Pixel Size'], inputs.outputs['Gap X'], 'X pitch')
     pitch_y = math('ADD', inputs.outputs['Pixel Size'], inputs.outputs['Gap Y'], 'Y pitch')
-    # A zero tile dimension means the full image on that axis. Nonzero tile
-    # dimensions are clipped to the source; column and row count from top-left.
+    # Margin is an equal border on all four sides. A zero tile dimension means
+    # the whole area inside the margin on that axis; larger tiles are clipped to it.
+    margin = inputs.outputs['Margin']
+    spacing = inputs.outputs['Spacing']
     tile_width = math('MAXIMUM', inputs.outputs['Tile Width'])
     tile_height = math('MAXIMUM', inputs.outputs['Tile Height'])
     group.nodes[tile_width.node.name].inputs[1].default_value = 1
     group.nodes[tile_height.node.name].inputs[1].default_value = 1
-    width = math('MINIMUM', info.outputs['Width'], tile_width, 'Selected width')
-    height = math('MINIMUM', info.outputs['Height'], tile_height, 'Selected height')
+    border = math_c('MULTIPLY', margin, 2, 'Both margins')
+    usable_width = math_c('MAXIMUM', math('SUBTRACT', info.outputs['Width'], border), 1, 'Usable width')
+    usable_height = math_c('MAXIMUM', math('SUBTRACT', info.outputs['Height'], border), 1, 'Usable height')
+    width = math('MINIMUM', usable_width, tile_width, 'Selected width')
+    height = math('MINIMUM', usable_height, tile_height, 'Selected height')
     use_width = math('GREATER_THAN', inputs.outputs['Tile Width'])
     use_height = math('GREATER_THAN', inputs.outputs['Tile Height'])
     width_switch = new_node(group, 'GeometryNodeSwitch', 'Tile or full width')
@@ -105,8 +130,8 @@ def create_group(material):
     height_switch.input_type = 'INT'
     links.new(use_width, width_switch.inputs['Switch'])
     links.new(use_height, height_switch.inputs['Switch'])
-    links.new(info.outputs['Width'], width_switch.inputs['False'])
-    links.new(info.outputs['Height'], height_switch.inputs['False'])
+    links.new(usable_width, width_switch.inputs['False'])
+    links.new(usable_height, height_switch.inputs['False'])
     links.new(width, width_switch.inputs['True'])
     links.new(height, height_switch.inputs['True'])
     selected_width = width_switch.outputs[0]
@@ -131,19 +156,35 @@ def create_group(material):
     links.new(math('SUBTRACT', math('MULTIPLY', row, pitch_y), center_y), position.inputs['Y'])
     links.new(position.outputs['Vector'], points.inputs['Position'])
 
-    # Tilesheets are regular grids counted from the upper-left. Only complete
-    # tiles are selectable; out-of-range selections clamp to the last tile.
+    # Tiles form a regular grid counted from the upper-left inside the margin,
+    # separated by Spacing pixels. Partial tiles at the far edge are ignored.
     # Geometry rows grow upward, matching Blender image coordinates.
-    last_column = math('SUBTRACT', math('FLOOR', math('DIVIDE', info.outputs['Width'], selected_width)), label='Last tile column')
-    last_row = math('SUBTRACT', math('FLOOR', math('DIVIDE', info.outputs['Height'], selected_height)), label='Last tile row')
-    group.nodes[last_column.node.name].inputs[1].default_value = 1
-    group.nodes[last_row.node.name].inputs[1].default_value = 1
-    tile_column = math('MINIMUM', inputs.outputs['Tile Column'], last_column, 'Tile column')
-    tile_row = math('MINIMUM', inputs.outputs['Tile Row'], last_row, 'Tile row')
-    x_sample = math('ADD', column, math('MULTIPLY', tile_column, selected_width), 'Source X')
-    next_row = math('ADD', tile_row, label='Next tile row')
-    group.nodes[next_row.node.name].inputs[1].default_value = 1
-    tile_bottom = math('SUBTRACT', info.outputs['Height'], math('MULTIPLY', next_row, selected_height), 'Tile bottom')
+    pitch_w = math('ADD', selected_width, spacing, 'Tile pitch X')
+    pitch_h = math('ADD', selected_height, spacing, 'Tile pitch Y')
+    columns = math_c('MAXIMUM', math('FLOOR', math('DIVIDE', math('ADD', usable_width, spacing), pitch_w)), 1, 'Tile columns')
+    rows = math_c('MAXIMUM', math('FLOOR', math('DIVIDE', math('ADD', usable_height, spacing), pitch_h)), 1, 'Tile rows')
+    total = math('MULTIPLY', columns, rows, 'Tile total')
+
+    # Animation walks tiles in reading order from First Tile, loops over Tile Count
+    # (0 = through the last tile), and holds each for Frames Per Tile frames.
+    first = math('MINIMUM', math_c('MAXIMUM', inputs.outputs['First Tile'], 0), math_c('SUBTRACT', total, 1), 'First tile')
+    remaining = math('SUBTRACT', total, first, 'Tiles after first')
+    count = switch('INT', 'Loop length', math_c('GREATER_THAN', inputs.outputs['Tile Count'], 0),
+                   remaining, math('MINIMUM', inputs.outputs['Tile Count'], remaining))
+    scene_time = new_node(group, 'GeometryNodeInputSceneTime', 'Scene frame')
+    hold = math_c('MAXIMUM', inputs.outputs['Frames Per Tile'], 1, 'Frames per tile')
+    step = math('FLOOR', math('DIVIDE', math('SUBTRACT', scene_time.outputs['Frame'], inputs.outputs['Start Frame']), hold), label='Animation step')
+    animated_index = math('ADD', first, math('FLOORED_MODULO', step, count), 'Animated tile')
+    animated_column = math('FLOORED_MODULO', animated_index, columns, 'Animated column')
+    animated_row = math('FLOOR', math('DIVIDE', animated_index, columns), label='Animated row')
+    tile_column = switch('INT', 'Tile column', inputs.outputs['Animate'],
+                         math('MINIMUM', inputs.outputs['Tile Column'], math_c('SUBTRACT', columns, 1)), animated_column)
+    tile_row = switch('INT', 'Tile row', inputs.outputs['Animate'],
+                      math('MINIMUM', inputs.outputs['Tile Row'], math_c('SUBTRACT', rows, 1)), animated_row)
+    tile_left = math('ADD', margin, math('MULTIPLY', tile_column, pitch_w), 'Tile left')
+    tile_top = math('ADD', margin, math('MULTIPLY', tile_row, pitch_h), 'Tile top')
+    tile_bottom = math('SUBTRACT', math('SUBTRACT', info.outputs['Height'], tile_top), selected_height, 'Tile bottom')
+    x_sample = math('ADD', column, tile_left, 'Source X')
     y_sample = math('ADD', row, tile_bottom, 'Source Y')
     u = math('ADD', x_sample, label='Pixel U center')
     group.nodes[u.node.name].inputs[1].default_value = 0.5
@@ -291,10 +332,21 @@ class PIXELER_PT_main(Panel):
                              and mod.node_group.name == GROUP_NAME), None)
             if modifier:
                 layout.separator()
-                for name in ('Image', 'Tile Width', 'Tile Height', 'Tile Column', 'Tile Row',
-                             'Pixel Size', 'Gap X', 'Gap Y', 'Height',
-                             'Skip Transparent', 'Palette Steps'):
-                    layout.prop(input_socket(modifier, modifier.node_group, name), 'value', text=name)
+                def show(names, box=layout):
+                    for name in names:
+                        box.prop(input_socket(modifier, modifier.node_group, name), 'value', text=name)
+
+                show(('Image',))
+                sheet = layout.box()
+                sheet.label(text='Tilesheet')
+                show(('Tile Width', 'Tile Height', 'Margin', 'Spacing'), sheet)
+                animate = input_socket(modifier, modifier.node_group, 'Animate')
+                sheet.prop(animate, 'value', text='Animate')
+                if animate.value:
+                    show(('Frames Per Tile', 'Start Frame', 'First Tile', 'Tile Count'), sheet)
+                else:
+                    show(('Tile Column', 'Tile Row'), sheet)
+                show(('Pixel Size', 'Gap X', 'Gap Y', 'Height', 'Skip Transparent', 'Palette Steps'))
 
 
 CLASSES = (PixelerSettings, PIXELER_OT_create, PIXELER_PT_main)
