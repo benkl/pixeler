@@ -17,8 +17,9 @@ class PixelerSettings(PropertyGroup):
     image: PointerProperty(name="Image", type=bpy.types.Image)
 
 
-def socket(group, name, direction, socket_type, default=None, minimum=None):
-    item = group.interface.new_socket(name=name, in_out=direction, socket_type=socket_type)
+def socket(group, name, direction, socket_type, default=None, minimum=None, description='', parent=None):
+    item = group.interface.new_socket(name=name, in_out=direction, socket_type=socket_type,
+                                      description=description, parent=parent)
     if default is not None:
         item.default_value = default
     if minimum is not None:
@@ -54,24 +55,52 @@ def create_group(material):
     group.is_modifier = True
     socket(group, 'Geometry', 'INPUT', 'NodeSocketGeometry')
     socket(group, 'Geometry', 'OUTPUT', 'NodeSocketGeometry')
-    socket(group, 'Image', 'INPUT', 'NodeSocketImage')
-    socket(group, 'Tile Width', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Tile Height', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Tile Column', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Tile Row', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Margin', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Spacing', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Animate', 'INPUT', 'NodeSocketBool', False)
-    socket(group, 'Frames Per Tile', 'INPUT', 'NodeSocketInt', 4, 1)
-    socket(group, 'Start Frame', 'INPUT', 'NodeSocketInt', 0)
-    socket(group, 'First Tile', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Tile Count', 'INPUT', 'NodeSocketInt', 0, 0)
-    socket(group, 'Pixel Size', 'INPUT', 'NodeSocketFloat', 1.0, 0.001)
-    socket(group, 'Gap X', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
-    socket(group, 'Gap Y', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
-    socket(group, 'Height', 'INPUT', 'NodeSocketFloat', 0.0, 0.0)
-    socket(group, 'Skip Transparent', 'INPUT', 'NodeSocketBool', True)
-    socket(group, 'Palette Steps', 'INPUT', 'NodeSocketInt', 0, 0)
+    socket(group, 'Image', 'INPUT', 'NodeSocketImage',
+           description='Image or tilesheet to turn into geometry')
+
+    sheet = group.interface.new_panel('Tilesheet', description='Pick one sprite from a regular grid of tiles')
+    socket(group, 'Tile Width', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Width of one sprite in pixels. 0 uses everything inside the margin')
+    socket(group, 'Tile Height', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Height of one sprite in pixels. 0 uses everything inside the margin')
+    socket(group, 'Margin', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Pixels of border around the whole sheet')
+    socket(group, 'Spacing', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Pixels between neighboring tiles')
+    socket(group, 'Tile Column', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Sprite column to show, counted from 0. Ignored while Animation is on')
+    socket(group, 'Tile Row', 'INPUT', 'NodeSocketInt', 0, 0, parent=sheet,
+           description='Sprite row to show, counted from 0. Ignored while Animation is on')
+
+    animation = group.interface.new_panel('Animation', default_closed=True,
+                                          description='Flip through tiles by scene frame')
+    toggle = socket(group, 'Animation', 'INPUT', 'NodeSocketBool', False, parent=animation,
+                    description='Step through tiles in reading order using the current frame')
+    toggle.is_panel_toggle = True  # Blender names a panel toggle after its panel
+    socket(group, 'Frames Per Tile', 'INPUT', 'NodeSocketInt', 4, 1, parent=animation,
+           description='Frames each tile is held')
+    socket(group, 'Start Frame', 'INPUT', 'NodeSocketInt', 0, parent=animation,
+           description='Frame at which the first tile appears. Earlier frames wrap backwards')
+    socket(group, 'First Tile', 'INPUT', 'NodeSocketInt', 0, 0, parent=animation,
+           description='Index of the first tile in the loop, 0 is the upper left')
+    socket(group, 'Tile Count', 'INPUT', 'NodeSocketInt', 0, 0, parent=animation,
+           description='Tiles in the loop. 0 runs through the last tile')
+
+    pixels = group.interface.new_panel('Pixels', description='Size and shape of each pixel')
+    socket(group, 'Pixel Size', 'INPUT', 'NodeSocketFloat', 1.0, 0.001, parent=pixels,
+           description='Width and depth of each plane or cube')
+    socket(group, 'Gap X', 'INPUT', 'NodeSocketFloat', 0.0, 0.0, parent=pixels,
+           description='Extra space between pixels along X')
+    socket(group, 'Gap Y', 'INPUT', 'NodeSocketFloat', 0.0, 0.0, parent=pixels,
+           description='Extra space between pixels along Y')
+    socket(group, 'Height', 'INPUT', 'NodeSocketFloat', 0.0, 0.0, parent=pixels,
+           description='0 makes flat planes, above 0 makes cubes resting on the XY plane')
+
+    color = group.interface.new_panel('Color', default_closed=True, description='Transparency and palette')
+    socket(group, 'Skip Transparent', 'INPUT', 'NodeSocketBool', True, parent=color,
+           description='Remove fully transparent pixels. Partly transparent ones keep their alpha')
+    socket(group, 'Palette Steps', 'INPUT', 'NodeSocketInt', 0, 0, parent=color,
+           description='0 keeps original colors, above 0 quantizes RGB to that many steps')
     links = group.links
     inputs = new_node(group, 'NodeGroupInput', 'Controls')
     output = new_node(group, 'NodeGroupOutput', 'Geometry')
@@ -170,9 +199,10 @@ def create_group(material):
     animated_index = math('ADD', first, math('FLOORED_MODULO', step, count), 'Animated tile')
     animated_column = math('FLOORED_MODULO', animated_index, columns, 'Animated column')
     animated_row = math('FLOOR', math('DIVIDE', animated_index, columns), label='Animated row')
-    tile_column = switch('INT', 'Tile column', inputs.outputs['Animate'],
+    animate = inputs.outputs[toggle.identifier]
+    tile_column = switch('INT', 'Tile column', animate,
                          math('MINIMUM', inputs.outputs['Tile Column'], math_c('SUBTRACT', columns, 1)), animated_column)
-    tile_row = switch('INT', 'Tile row', inputs.outputs['Animate'],
+    tile_row = switch('INT', 'Tile row', animate,
                       math('MINIMUM', inputs.outputs['Tile Row'], math_c('SUBTRACT', rows, 1)), animated_row)
     tile_left = math('ADD', margin, math('MULTIPLY', tile_column, pitch_w), 'Tile left')
     tile_top = math('ADD', margin, math('MULTIPLY', tile_row, pitch_h), 'Tile top')
@@ -272,6 +302,11 @@ def input_socket(modifier, group, name):
     return getattr(modifier.properties.inputs, identifier)
 
 
+def is_current_group(group):
+    # Groups from Pixeler 0.4 and older have no interface panels; the Animation panel toggle marks the current layout.
+    return any(item.item_type == 'SOCKET' and item.is_panel_toggle for item in group.interface.items_tree)
+
+
 class PIXELER_OT_create(Operator):
     bl_idname = 'object.pixeler_create'
     bl_label = 'Create Pixel Geometry'
@@ -289,7 +324,11 @@ class PIXELER_OT_create(Operator):
             self.report({'ERROR'}, 'Image has no pixels')
             return {'CANCELLED'}
         material = bpy.data.materials.get(MATERIAL_NAME) or create_material()
-        group = bpy.data.node_groups.get(GROUP_NAME) or create_group(material)
+        group = bpy.data.node_groups.get(GROUP_NAME)
+        if group is not None and not is_current_group(group):
+            group.name = GROUP_NAME + ' (old layout)'
+            group = None
+        group = group or create_group(material)
         collection = bpy.data.collections.get('Pixeler')
         if collection is None:
             collection = bpy.data.collections.new('Pixeler')
@@ -307,6 +346,22 @@ class PIXELER_OT_create(Operator):
         return {'FINISHED'}
 
 
+def pixeler_modifier(context):
+    obj = context.object
+    if obj is None:
+        return None
+    return next((mod for mod in obj.modifiers
+                 if mod.type == 'NODES' and mod.node_group and mod.node_group.name == GROUP_NAME
+                 and is_current_group(mod.node_group)), None)
+
+
+def draw_inputs(layout, modifier, names):
+    layout.use_property_split = True
+    layout.use_property_decorate = False
+    for name in names:
+        layout.prop(input_socket(modifier, modifier.node_group, name), 'value', text=name)
+
+
 class PIXELER_PT_main(Panel):
     bl_idname = 'PIXELER_PT_main'
     bl_label = 'Pixeler'
@@ -318,31 +373,67 @@ class PIXELER_PT_main(Panel):
         layout = self.layout
         layout.template_ID(context.scene.pixeler_settings, 'image', open='image.open')
         layout.operator('object.pixeler_create', icon='GEOMETRY_NODES')
-        obj = context.object
-        if obj:
-            modifier = next((mod for mod in obj.modifiers
-                             if mod.type == 'NODES' and mod.node_group
-                             and mod.node_group.name == GROUP_NAME), None)
-            if modifier:
-                layout.separator()
-                def show(names, box=layout):
-                    for name in names:
-                        box.prop(input_socket(modifier, modifier.node_group, name), 'value', text=name)
-
-                show(('Image',))
-                sheet = layout.box()
-                sheet.label(text='Tilesheet')
-                show(('Tile Width', 'Tile Height', 'Margin', 'Spacing'), sheet)
-                animate = input_socket(modifier, modifier.node_group, 'Animate')
-                sheet.prop(animate, 'value', text='Animate')
-                if animate.value:
-                    show(('Frames Per Tile', 'Start Frame', 'First Tile', 'Tile Count'), sheet)
-                else:
-                    show(('Tile Column', 'Tile Row'), sheet)
-                show(('Pixel Size', 'Gap X', 'Gap Y', 'Height', 'Skip Transparent', 'Palette Steps'))
+        modifier = pixeler_modifier(context)
+        if modifier:
+            layout.separator()
+            draw_inputs(layout, modifier, ('Image',))
 
 
-CLASSES = (PixelerSettings, PIXELER_OT_create, PIXELER_PT_main)
+class PixelerSubPanel:
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'Pixeler'
+    bl_parent_id = 'PIXELER_PT_main'
+
+    @classmethod
+    def poll(cls, context):
+        return pixeler_modifier(context) is not None
+
+
+class PIXELER_PT_tilesheet(PixelerSubPanel, Panel):
+    bl_label = 'Tilesheet'
+
+    def draw(self, context):
+        modifier = pixeler_modifier(context)
+        draw_inputs(self.layout, modifier, ('Tile Width', 'Tile Height', 'Margin', 'Spacing'))
+        self.layout.separator()
+        picker = self.layout.column()
+        picker.active = not input_socket(modifier, modifier.node_group, 'Animation').value
+        draw_inputs(picker, modifier, ('Tile Column', 'Tile Row'))
+
+
+class PIXELER_PT_animation(PixelerSubPanel, Panel):
+    bl_label = 'Animation'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw_header(self, context):
+        modifier = pixeler_modifier(context)
+        self.layout.prop(input_socket(modifier, modifier.node_group, 'Animation'), 'value', text='')
+
+    def draw(self, context):
+        modifier = pixeler_modifier(context)
+        body = self.layout.column()
+        body.active = input_socket(modifier, modifier.node_group, 'Animation').value
+        draw_inputs(body, modifier, ('Frames Per Tile', 'Start Frame', 'First Tile', 'Tile Count'))
+
+
+class PIXELER_PT_pixels(PixelerSubPanel, Panel):
+    bl_label = 'Pixels'
+
+    def draw(self, context):
+        draw_inputs(self.layout, pixeler_modifier(context), ('Pixel Size', 'Gap X', 'Gap Y', 'Height'))
+
+
+class PIXELER_PT_color(PixelerSubPanel, Panel):
+    bl_label = 'Color'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        draw_inputs(self.layout, pixeler_modifier(context), ('Skip Transparent', 'Palette Steps'))
+
+
+CLASSES = (PixelerSettings, PIXELER_OT_create, PIXELER_PT_main, PIXELER_PT_tilesheet,
+           PIXELER_PT_animation, PIXELER_PT_pixels, PIXELER_PT_color)
 
 
 def register():
