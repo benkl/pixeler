@@ -11,6 +11,7 @@ GROUP_NAME = "Pixeler Geometry"
 MATERIAL_NAME = "Pixeler Surface"
 COLOR_ATTRIBUTE = "pixeler_color"
 ALPHA_ATTRIBUTE = "pixeler_alpha"
+PIXEL_GROUP_NAME = 'Pixeler Pixel Geometry'
 
 
 class PixelerSettings(PropertyGroup):
@@ -33,6 +34,30 @@ def new_node(group, node_type, label):
     return node
 
 
+def socket_by_id(sockets, identifier):
+    return next(s for s in sockets if s.identifier == identifier)
+
+
+def tint_material(material):
+    """Multiply the stored pixel color by the object's viewport color."""
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    shader = next(node for node in nodes if node.type == 'BSDF_PRINCIPLED')
+    source = next((node for node in nodes if node.type == 'ATTRIBUTE'
+                   and node.attribute_name == COLOR_ATTRIBUTE), None)
+    if source is None:
+        source = nodes.new('ShaderNodeAttribute')
+        source.attribute_name = COLOR_ATTRIBUTE
+    object_info = nodes.new('ShaderNodeObjectInfo')
+    tint = nodes.new('ShaderNodeMix')
+    tint.data_type = 'RGBA'
+    tint.blend_type = 'MULTIPLY'
+    tint.inputs['Factor'].default_value = 1.0
+    links.new(source.outputs['Color'], socket_by_id(tint.inputs, 'A_Color'))
+    links.new(object_info.outputs['Color'], socket_by_id(tint.inputs, 'B_Color'))
+    links.new(socket_by_id(tint.outputs, 'Result_Color'), shader.inputs['Base Color'])
+
+
 def create_material():
     material = bpy.data.materials.new(MATERIAL_NAME)
     material.use_nodes = True
@@ -40,17 +65,77 @@ def create_material():
     nodes = material.node_tree.nodes
     links = material.node_tree.links
     shader = next(node for node in nodes if node.type == 'BSDF_PRINCIPLED')
-
-    color = nodes.new('ShaderNodeAttribute')
-    color.attribute_name = COLOR_ATTRIBUTE
-    links.new(color.outputs['Color'], shader.inputs['Base Color'])
+    tint_material(material)
     alpha = nodes.new('ShaderNodeAttribute')
     alpha.attribute_name = ALPHA_ATTRIBUTE
     links.new(alpha.outputs['Fac'], shader.inputs['Alpha'])
     return material
 
 
-def create_group(material):
+def create_pixel_group(material):
+    group = bpy.data.node_groups.new(PIXEL_GROUP_NAME, 'GeometryNodeTree')
+    for name, kind in (('Color', 'NodeSocketColor'), ('Alpha', 'NodeSocketFloat'),
+                       ('Size', 'NodeSocketFloat'), ('Height', 'NodeSocketFloat'),
+                       ('Column', 'NodeSocketInt'), ('Row', 'NodeSocketInt'),
+                       ('Store Vertex Colors', 'NodeSocketBool')):
+        socket(group, name, 'INPUT', kind)
+    socket(group, 'Geometry', 'OUTPUT', 'NodeSocketGeometry')
+    links = group.links
+    inputs = new_node(group, 'NodeGroupInput', 'Pixel data')
+    output = new_node(group, 'NodeGroupOutput', 'Pixel mesh')
+    plane = new_node(group, 'GeometryNodeMeshGrid', 'Flat pixel')
+    plane.inputs['Vertices X'].default_value = 2
+    plane.inputs['Vertices Y'].default_value = 2
+    links.new(inputs.outputs['Size'], plane.inputs['Size X'])
+    links.new(inputs.outputs['Size'], plane.inputs['Size Y'])
+    cube = new_node(group, 'GeometryNodeMeshCube', 'Extruded pixel')
+    dimensions = new_node(group, 'ShaderNodeCombineXYZ', 'Cube dimensions')
+    links.new(inputs.outputs['Size'], dimensions.inputs['X'])
+    links.new(inputs.outputs['Size'], dimensions.inputs['Y'])
+    links.new(inputs.outputs['Height'], dimensions.inputs['Z'])
+    links.new(dimensions.outputs['Vector'], cube.inputs['Size'])
+    lift = new_node(group, 'GeometryNodeTransform', 'Rest cube on XY plane')
+    links.new(cube.outputs['Mesh'], lift.inputs['Geometry'])
+    half = new_node(group, 'ShaderNodeMath', 'Half height')
+    half.operation = 'MULTIPLY'
+    half.inputs[1].default_value = 0.5
+    links.new(inputs.outputs['Height'], half.inputs[0])
+    offset = new_node(group, 'ShaderNodeCombineXYZ', 'Height offset')
+    links.new(half.outputs[0], offset.inputs['Z'])
+    links.new(offset.outputs['Vector'], lift.inputs['Translation'])
+    shape = new_node(group, 'GeometryNodeSwitch', 'Plane or cube')
+    shape.input_type = 'GEOMETRY'
+    greater = new_node(group, 'ShaderNodeMath', 'Extrude')
+    greater.operation = 'GREATER_THAN'
+    links.new(inputs.outputs['Height'], greater.inputs[0])
+    links.new(greater.outputs[0], shape.inputs['Switch'])
+    links.new(plane.outputs['Mesh'], shape.inputs['False'])
+    links.new(lift.outputs['Geometry'], shape.inputs['True'])
+    paint = new_node(group, 'GeometryNodeSetMaterial', 'Pixel material')
+    paint.inputs['Material'].default_value = material
+    links.new(shape.outputs[0], paint.inputs['Geometry'])
+    color = new_node(group, 'GeometryNodeStoreNamedAttribute', 'Optional vertex color')
+    color.data_type = 'FLOAT_COLOR'
+    color.domain = 'POINT'
+    color.inputs['Name'].default_value = COLOR_ATTRIBUTE
+    links.new(paint.outputs['Geometry'], color.inputs['Geometry'])
+    links.new(inputs.outputs['Color'], color.inputs['Value'])
+    color_mode = new_node(group, 'GeometryNodeSwitch', 'Vertex color on/off')
+    color_mode.input_type = 'GEOMETRY'
+    links.new(inputs.outputs['Store Vertex Colors'], color_mode.inputs['Switch'])
+    links.new(paint.outputs['Geometry'], color_mode.inputs['False'])
+    links.new(color.outputs['Geometry'], color_mode.inputs['True'])
+    alpha = new_node(group, 'GeometryNodeStoreNamedAttribute', 'Pixel alpha')
+    alpha.data_type = 'FLOAT'
+    alpha.domain = 'POINT'
+    alpha.inputs['Name'].default_value = ALPHA_ATTRIBUTE
+    links.new(color_mode.outputs[0], alpha.inputs['Geometry'])
+    links.new(inputs.outputs['Alpha'], alpha.inputs['Value'])
+    links.new(alpha.outputs['Geometry'], output.inputs['Geometry'])
+    return group
+
+
+def create_group(material, pixel_group):
     group = bpy.data.node_groups.new(GROUP_NAME, 'GeometryNodeTree')
     group.is_modifier = True
     socket(group, 'Geometry', 'INPUT', 'NodeSocketGeometry')
@@ -99,12 +184,16 @@ def create_group(material):
            description='Extra space between pixels along Y')
     socket(group, 'Height', 'INPUT', 'NodeSocketFloat', 0.0, 0.0, parent=pixels,
            description='0 makes flat planes, above 0 makes cubes resting on the XY plane')
+    socket(group, 'Custom Pixel', 'INPUT', 'NodeSocketBool', False, parent=pixels,
+           description='Run the editable Pixel Geometry group once for each visible pixel')
 
     color = group.interface.new_panel('Color', default_closed=True, description='Transparency and palette')
     socket(group, 'Skip Transparent', 'INPUT', 'NodeSocketBool', True, parent=color,
            description='Remove fully transparent pixels. Partly transparent ones keep their alpha')
     socket(group, 'Palette Steps', 'INPUT', 'NodeSocketInt', 0, 0, parent=color,
            description='0 keeps original colors, above 0 quantizes RGB to that many steps')
+    socket(group, 'Store Vertex Colors', 'INPUT', 'NodeSocketBool', True, parent=color,
+           description='Write pixeler_color to the generated mesh; turn off for uncolored custom geometry')
     links = group.links
     inputs = new_node(group, 'NodeGroupInput', 'Controls')
     output = new_node(group, 'NodeGroupOutput', 'Geometry')
@@ -254,12 +343,17 @@ def create_group(material):
     color.domain = 'POINT'
     color.inputs['Name'].default_value = COLOR_ATTRIBUTE
     links.new(points.outputs['Points'], color.inputs['Geometry'])
+    color_mode = new_node(group, 'GeometryNodeSwitch', 'Vertex color on/off')
+    color_mode.input_type = 'GEOMETRY'
+    links.new(inputs.outputs['Store Vertex Colors'], color_mode.inputs['Switch'])
+    links.new(points.outputs['Points'], color_mode.inputs['False'])
+    links.new(color.outputs['Geometry'], color_mode.inputs['True'])
     links.new(quantize.outputs[0], color.inputs['Value'])
     alpha = new_node(group, 'GeometryNodeStoreNamedAttribute', 'Pixel alpha')
     alpha.data_type = 'FLOAT'
     alpha.domain = 'POINT'
     alpha.inputs['Name'].default_value = ALPHA_ATTRIBUTE
-    links.new(color.outputs['Geometry'], alpha.inputs['Geometry'])
+    links.new(color_mode.outputs[0], alpha.inputs['Geometry'])
     links.new(texture.outputs['Alpha'], alpha.inputs['Value'])
 
     transparent = math('LESS_THAN', texture.outputs['Alpha'], label='Fully transparent')
@@ -301,7 +395,36 @@ def create_group(material):
     links.new(paint.outputs['Geometry'], instance.inputs['Instance'])
     realize = new_node(group, 'GeometryNodeRealizeInstances', 'Expose pixel colors to shader')
     links.new(instance.outputs['Instances'], realize.inputs['Geometry'])
-    links.new(realize.outputs['Geometry'], output.inputs['Geometry'])
+    custom_points = new_node(group, 'GeometryNodeDeleteGeometry', 'Visible pixel points')
+    custom_points.domain = 'POINT'
+    links.new(points.outputs['Points'], custom_points.inputs['Geometry'])
+    links.new(skip, custom_points.inputs['Selection'])
+    each = new_node(group, 'GeometryNodeForeachGeometryElementInput', 'For each visible pixel')
+    collect = new_node(group, 'GeometryNodeForeachGeometryElementOutput', 'Collect pixel meshes')
+    each.pair_with_output(collect)
+    for kind, name in (('RGBA', 'Color'), ('FLOAT', 'Alpha'), ('VECTOR', 'Position'),
+                       ('INT', 'Column'), ('INT', 'Row')):
+        collect.input_items.new(kind, name)
+    links.new(custom_points.outputs['Geometry'], each.inputs['Geometry'])
+    links.new(quantize.outputs[0], each.inputs['Color'])
+    links.new(texture.outputs['Alpha'], each.inputs['Alpha'])
+    links.new(position.outputs['Vector'], each.inputs['Position'])
+    links.new(column, each.inputs['Column'])
+    links.new(row, each.inputs['Row'])
+    pixel = new_node(group, 'GeometryNodeGroup', 'Edit this group to shape each pixel')
+    pixel.node_tree = pixel_group
+    for name in ('Color', 'Alpha', 'Column', 'Row'):
+        links.new(each.outputs[name], pixel.inputs[name])
+    links.new(inputs.outputs['Pixel Size'], pixel.inputs['Size'])
+    links.new(inputs.outputs['Height'], pixel.inputs['Height'])
+    links.new(inputs.outputs['Store Vertex Colors'], pixel.inputs['Store Vertex Colors'])
+    place = new_node(group, 'GeometryNodeTransform', 'Position custom pixel')
+    links.new(pixel.outputs['Geometry'], place.inputs['Geometry'])
+    links.new(each.outputs['Position'], place.inputs['Translation'])
+    links.new(place.outputs['Geometry'], collect.inputs['Geometry'])
+    final = switch('GEOMETRY', 'Built-in or custom pixel', inputs.outputs['Custom Pixel'],
+                   realize.outputs['Geometry'], collect.outputs['Generation_0'])
+    links.new(final, output.inputs['Geometry'])
     return group
 
 def input_socket(modifier, group, name):
@@ -311,8 +434,7 @@ def input_socket(modifier, group, name):
 
 
 def is_current_group(group):
-    # Older groups lack the Tilesheet panel toggle; it marks the current layout.
-    return any(item.item_type == 'SOCKET' and item.is_panel_toggle and item.name == 'Tilesheet'
+    return any(item.item_type == 'SOCKET' and item.name == 'Custom Pixel'
                for item in group.interface.items_tree)
 
 
@@ -333,11 +455,12 @@ class PIXELER_OT_create(Operator):
             self.report({'ERROR'}, 'Image has no pixels')
             return {'CANCELLED'}
         material = bpy.data.materials.get(MATERIAL_NAME) or create_material()
-        group = bpy.data.node_groups.get(GROUP_NAME)
-        if group is not None and not is_current_group(group):
-            group.name = GROUP_NAME + ' (old layout)'
-            group = None
-        group = group or create_group(material)
+        if not any(node.type == 'OBJECT_INFO' for node in material.node_tree.nodes):
+            tint_material(material)
+        # Each object gets its own editable pixel template and modifier graph.
+        # Existing objects keep their graph when a new one is created.
+        pixel_group = create_pixel_group(material)
+        group = create_group(material, pixel_group)
         collection = bpy.data.collections.get('Pixeler')
         if collection is None:
             collection = bpy.data.collections.new('Pixeler')
@@ -348,6 +471,7 @@ class PIXELER_OT_create(Operator):
         modifier = obj.modifiers.new('Pixeler', 'NODES')
         modifier.node_group = group
         input_socket(modifier, group, 'Image').value = image
+        obj.color = (1.0, 1.0, 1.0, 1.0)
         for selected in context.selected_objects:
             selected.select_set(False)
         obj.select_set(True)
@@ -360,7 +484,8 @@ def pixeler_modifier(context):
     if obj is None:
         return None
     return next((mod for mod in obj.modifiers
-                 if mod.type == 'NODES' and mod.node_group and mod.node_group.name == GROUP_NAME
+                 if mod.type == 'NODES' and mod.node_group
+                 and mod.node_group.name.startswith(GROUP_NAME)
                  and is_current_group(mod.node_group)), None)
 
 
@@ -438,7 +563,8 @@ class PIXELER_PT_pixels(PixelerSubPanel, Panel):
     bl_label = 'Pixels'
 
     def draw(self, context):
-        draw_inputs(self.layout, pixeler_modifier(context), ('Pixel Size', 'Gap X', 'Gap Y', 'Height'))
+        draw_inputs(self.layout, pixeler_modifier(context),
+                    ('Pixel Size', 'Gap X', 'Gap Y', 'Height', 'Custom Pixel'))
 
 
 class PIXELER_PT_color(PixelerSubPanel, Panel):
@@ -446,7 +572,10 @@ class PIXELER_PT_color(PixelerSubPanel, Panel):
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
-        draw_inputs(self.layout, pixeler_modifier(context), ('Skip Transparent', 'Palette Steps'))
+        modifier = pixeler_modifier(context)
+        draw_inputs(self.layout, modifier, ('Skip Transparent', 'Palette Steps', 'Store Vertex Colors'))
+        self.layout.use_property_split = True
+        self.layout.prop(context.object, 'color', text='Object Color')
 
 
 CLASSES = (PixelerSettings, PIXELER_OT_create, PIXELER_PT_main, PIXELER_PT_tilesheet,

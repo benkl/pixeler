@@ -6,7 +6,7 @@ Pixeler turns an image or a tilesheet sprite into live pixel geometry in Blender
 
 ## Install
 
-Download `pixeler-0.5.0.zip` from the [latest release](https://github.com/benkl/pixeler/releases/latest). In Blender, open **Edit → Preferences → Get Extensions**, choose **Install from Disk** from the dropdown at the top right, select the zip, and enable the add-on.
+Download `pixeler-0.7.0.zip` from the [latest release](https://github.com/benkl/pixeler/releases/latest). In Blender, open **Edit → Preferences → Get Extensions**, choose **Install from Disk** from the dropdown at the top right, select the zip, and enable the add-on.
 
 ## Use
 
@@ -26,11 +26,22 @@ Download `pixeler-0.5.0.zip` from the [latest release](https://github.com/benkl/
      - **Pixel Size**: width and depth of each plane or cube, in Blender units.
      - **Gap X / Gap Y**: additional spacing between pixels.
      - **Height**: `0` for planes; positive values make cubes resting on the XY plane.
+     - **Custom Pixel**: build each pixel from the object's own `Pixeler Pixel Geometry` node group instead of the built-in plane or cube. See below.
    - **Color** (collapsed by default)
      - **Skip Transparent**: remove pixels with zero alpha. Turn it off to keep their geometry; partially transparent pixels retain their alpha.
      - **Palette Steps**: `0` keeps original colors; positive values quantize straight RGB to that many steps between 0 and 1.
+     - **Store Vertex Colors**: write `pixeler_color` to the mesh (default on). Off leaves the attribute out, so you can color the mesh yourself.
+     - **Object Color**: the object's viewport color (`object.color`). Solid shading set to Object color shows it directly. The `Pixeler Surface` material multiplies it with the pixel color, so white leaves the pixels unchanged. With Store Vertex Colors off the material has no color to read and renders black; give the object your own material or shade it in the viewport.
 
-Pixels are centered around the object's origin; the bottom row of the image maps to negative Y. Pixeler stores `pixeler_color` and `pixeler_alpha` as geometry attributes and reads them in one shared `Pixeler Surface` material. Adjust that material's Principled BSDF for metalness, roughness, etc. Editing the shared node group or material affects all Pixeler objects in the file. To edit geometry directly, apply the modifier first. This is a clean cutover: existing objects made by the Blender 2.8 add-on are not converted automatically. Objects made by 0.4.x and 0.5.0 keep their old node group; the sidebar hides their controls, and **Create Pixel Geometry** renames that group to `Pixeler Geometry (old layout)` and builds a new one.
+Pixels are centered around the object's origin; the bottom row of the image maps to negative Y. Pixeler stores `pixeler_color` (unless turned off) and `pixeler_alpha` as geometry attributes and reads them in one shared `Pixeler Surface` material. Adjust that material's Principled BSDF for metalness, roughness, etc. Editing the material affects all Pixeler objects in the file. To edit geometry directly, apply the modifier first. This is a clean cutover: existing objects made by the Blender 2.8 add-on are not converted automatically.
+
+## Custom pixels
+
+Every Pixeler object gets two node groups: `Pixeler Geometry` (the modifier) and `Pixeler Pixel Geometry` (the pixel template). Both are per object, so editing them changes that object only. With **Custom Pixel** on, the modifier runs the pixel group once for each visible pixel in a For Each Element zone and moves the result to that pixel's position.
+
+The pixel group receives `Color`, `Alpha`, `Size`, `Height`, `Column`, `Row` (the pixel's position in the image) and `Store Vertex Colors`. It returns one `Geometry`. The default contents rebuild the plane or cube, so switching Custom Pixel on changes nothing until you edit it. Open the group in the Geometry Nodes editor (select the "Edit this group to shape each pixel" node in the modifier and press **Tab**), then swap in your own mesh, offset by `Column` and `Row`, scale by `Alpha`, and so on. Keep the `pixeler_color` and `pixeler_alpha` stores if the material should still read them.
+
+Objects made by 0.6.0 and earlier keep their old shared node group. The sidebar hides their controls. Click **Create Pixel Geometry** again to get an object with the new layout; the old group is left alone.
 
 Large images produce many faces: roughly one face per visible pixel in plane mode or six in cube mode. Start with small images, especially when extruding. Saved `.blend` files keep the source image data block; pack external images if the file must be portable.
 

@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "pixeler"
-version = "0.6.0"
+version = "0.7.0"
 name = "Pixeler"
 tagline = "Turn images and tilesheet sprites into live pixel geometry"
 maintainer = "Benjamin Kleinert <benny_kleinert@gmx.de>"
