@@ -6,7 +6,7 @@ Pixeler turns an image or a tilesheet sprite into live pixel geometry in Blender
 
 ## Install
 
-Download `pixeler-0.4.0.zip` from the [latest release](https://github.com/benkl/pixeler/releases/latest). In Blender, open **Edit → Preferences → Get Extensions**, choose **Install from Disk** from the dropdown at the top right, select the zip, and enable the add-on.
+Download `pixeler-0.4.1.zip` from the [latest release](https://github.com/benkl/pixeler/releases/latest). In Blender, open **Edit → Preferences → Get Extensions**, choose **Install from Disk** from the dropdown at the top right, select the zip, and enable the add-on.
 
 ## Use
 

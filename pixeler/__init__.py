@@ -317,7 +317,7 @@ class PIXELER_PT_main(Panel):
     def draw(self, context):
         layout = self.layout
         layout.template_ID(context.scene.pixeler_settings, 'image', open='image.open')
-        layout.operator('object.pixeler_create', icon='MOD_NODES')
+        layout.operator('object.pixeler_create', icon='GEOMETRY_NODES')
         obj = context.object
         if obj:
             modifier = next((mod for mod in obj.modifiers
